@@ -12,6 +12,8 @@ Requisitos: JDK 21 y Maven 3.9+.
 mvn quarkus:dev
 ```
 
+Configura `AUTH_TOKEN_SECRET` en el entorno antes de iniciar el servicio. Debe contener al menos 32 bytes UTF-8; no existe una clave por defecto.
+
 Servicio: `http://localhost:8080`
 
 Credenciales locales:
