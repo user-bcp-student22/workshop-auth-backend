@@ -6,13 +6,17 @@ import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTVerificationException;
 import com.auth0.jwt.exceptions.TokenExpiredException;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.path.json.JsonPath;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.Date;
+import java.util.Set;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.hamcrest.CoreMatchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -51,6 +55,58 @@ class AuthResourceTest {
                 .withExpiresAt(Date.from(Instant.now().minusSeconds(3600)))
                 .sign(Algorithm.HMAC256(TEST_SECRET));
         assertThrows(TokenExpiredException.class, () -> verifier.verify(expiredToken));
+    }
+
+    @Test
+    void characterizesSuccessfulResponseShape() {
+        JsonPath json = given()
+                .contentType("application/json")
+                .body("{\"username\":\"student\",\"password\":\"Workshop123!\",\"client\":\"angular-workshop\"}")
+                .when().post("/auth/login")
+                .then()
+                .statusCode(200)
+                .extract().jsonPath();
+
+        assertEquals(Set.of("token", "expiresIn", "user", "debug"), json.getMap("").keySet());
+        assertEquals(Set.of("username", "displayName", "role"), json.getMap("user").keySet());
+        assertEquals("student", json.getString("user.username"));
+        assertEquals("Workshop Student", json.getString("user.displayName"));
+        assertEquals("STUDENT", json.getString("user.role"));
+        assertEquals(3600, json.getInt("expiresIn"));
+        assertEquals("authenticated-with-legacy-flow", json.getString("debug"));
+    }
+
+    @Test
+    void characterizesOmittedClientCurrentlySucceeds() {
+        // Baseline only: task 2.1 replaces this expectation with 400.
+        given()
+                .contentType("application/json")
+                .body("{\"username\":\"student\",\"password\":\"Workshop123!\"}")
+                .when().post("/auth/login")
+                .then()
+                .statusCode(200)
+                .body("token", notNullValue());
+    }
+
+    @Test
+    void rejectedRequestsIssueNoToken() {
+        assertRejectedWithoutToken("null", 400);
+        assertRejectedWithoutToken("{\"username\":null,\"password\":\"Workshop123!\"}", 400);
+        assertRejectedWithoutToken("{\"username\":\" \",\"password\":\"Workshop123!\"}", 400);
+        assertRejectedWithoutToken("{\"username\":\"student\",\"password\":null}", 400);
+        assertRejectedWithoutToken("{\"username\":\"student\",\"password\":\" \"}", 400);
+        assertRejectedWithoutToken("{\"username\":\"unknown-user\",\"password\":\"wrong-password\"}", 401);
+        assertRejectedWithoutToken("{\"username\":\"student\",\"password\":\"wrong-password\"}", 401);
+    }
+
+    private static void assertRejectedWithoutToken(String body, int expectedStatus) {
+        given()
+                .contentType("application/json")
+                .body(body)
+                .when().post("/auth/login")
+                .then()
+                .statusCode(expectedStatus)
+                .body("token", nullValue());
     }
 
     @Test
